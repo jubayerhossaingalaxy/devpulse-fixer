@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Bot, Send, RefreshCw, CheckCircle2, XCircle, Clock, Facebook, Zap } from "lucide-react";
+import { Bot, Send, RefreshCw, CheckCircle2, XCircle, Clock, Facebook, Zap, Settings, Eye, EyeOff, Save } from "lucide-react";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +15,25 @@ const statusConfig = {
 const AutoPostPage = () => {
   const [posting, setPosting] = useState(false);
   const [postCount, setPostCount] = useState(1);
+  const [showSettings, setShowSettings] = useState(false);
+  const [pageId, setPageId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    setPageId(localStorage.getItem("fb_page_id") || "");
+    setAccessToken(localStorage.getItem("fb_access_token") || "");
+  }, []);
+
+  const handleSaveSettings = () => {
+    localStorage.setItem("fb_page_id", pageId.trim());
+    localStorage.setItem("fb_access_token", accessToken.trim());
+    toast({ title: "Settings Saved", description: "Facebook credentials updated successfully." });
+    setShowSettings(false);
+  };
+
+  const isConfigured = !!localStorage.getItem("fb_page_id") && !!localStorage.getItem("fb_access_token");
 
   const { data: posts, refetch, isLoading } = useQuery({
     queryKey: ["auto-posts"],
@@ -31,10 +49,17 @@ const AutoPostPage = () => {
   });
 
   const handlePost = async () => {
+    const savedPageId = localStorage.getItem("fb_page_id");
+    const savedToken = localStorage.getItem("fb_access_token");
+    if (!savedPageId || !savedToken) {
+      toast({ title: "Missing Configuration", description: "Please configure your Facebook Page ID and Access Token first.", variant: "destructive" });
+      setShowSettings(true);
+      return;
+    }
     setPosting(true);
     try {
       const { data, error } = await supabase.functions.invoke("auto-post-facebook", {
-        body: { count: postCount },
+        body: { count: postCount, pageId: savedPageId, accessToken: savedToken },
       });
       if (error) throw error;
       toast({
@@ -71,13 +96,113 @@ const AutoPostPage = () => {
         </p>
       </div>
 
+      {/* Facebook Settings Card */}
       <div className="rounded-xl border border-border bg-card p-5 mb-5">
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Facebook className="h-5 w-5 text-accent-blue" />
-            <span className="text-sm font-medium text-foreground">Facebook Page Connected</span>
+            <span className="text-sm font-medium text-foreground">Facebook Page Configuration</span>
+            {isConfigured ? (
+              <Badge className="bg-primary/10 text-primary text-xs border-0">Connected</Badge>
+            ) : (
+              <Badge className="bg-destructive/10 text-destructive text-xs border-0">Not Configured</Badge>
+            )}
           </div>
-          <div className="flex-1" />
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+            {showSettings ? "Hide" : "Configure"}
+          </button>
+        </div>
+
+        {showSettings && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Facebook Page ID
+              </label>
+              <input
+                type="text"
+                value={pageId}
+                onChange={(e) => setPageId(e.target.value)}
+                placeholder="e.g. 123456789012345"
+                className="w-full px-3 py-2.5 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Find this in your Facebook Page → About → Page ID
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Page Access Token
+              </label>
+              <div className="relative">
+                <input
+                  type={showToken ? "text" : "password"}
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder="EAAxxxxxxxxxxxxxxx..."
+                  className="w-full px-3 py-2.5 pr-10 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Generate a Page Access Token from{" "}
+                <a
+                  href="https://developers.facebook.com/tools/explorer/"
+                  target="_blank"
+                  rel="noopener"
+                  className="text-accent-blue hover:underline"
+                >
+                  Graph API Explorer
+                </a>
+                {" "}with <span className="font-mono text-foreground">pages_manage_posts</span> permission
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={handleSaveSettings}
+                disabled={!pageId.trim() || !accessToken.trim()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                Save Configuration
+              </button>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 rounded-lg bg-muted text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-accent-orange/20 bg-accent-orange/5 p-3 mt-2">
+              <p className="text-xs text-accent-orange">
+                ⚠️ Your credentials are stored locally in this browser. For production use, store them as server-side secrets.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="rounded-xl border border-border bg-card p-5 mb-5">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground">Posts:</label>
             <select
@@ -90,6 +215,7 @@ const AutoPostPage = () => {
               ))}
             </select>
           </div>
+          <div className="flex-1" />
           <button
             onClick={handlePost}
             disabled={posting}
@@ -105,6 +231,7 @@ const AutoPostPage = () => {
         </div>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-5">
         {[
           { label: "Total Posts", value: stats.total, icon: Zap, color: "text-foreground" },
@@ -119,6 +246,7 @@ const AutoPostPage = () => {
         ))}
       </div>
 
+      {/* Schedule */}
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-5">
         <div className="flex items-center gap-2 mb-2">
           <Clock className="h-4 w-4 text-primary" />
@@ -133,6 +261,7 @@ const AutoPostPage = () => {
         </div>
       </div>
 
+      {/* Post History */}
       <h2 className="font-display font-semibold text-foreground mb-3">Post History</h2>
       {isLoading ? (
         <div className="text-center py-10 text-muted-foreground text-sm">Loading...</div>
